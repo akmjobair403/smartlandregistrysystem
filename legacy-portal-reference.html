@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BD LAND REGISTRY SYSTEM  </title>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- FontAwesome for professional icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Inter Font -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+    theme: {
+        extend: {
+            fontFamily: {
+                sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+                brand: {
+                    50: '#f0fdf4',
+                    100: '#dcfce7',
+                    500: '#22c55e',
+                    600: '#16a34a',
+                    700: '#15803d',
+                    800: '#166534',
+                    900: '#14532d',
+                }
+            }
+        }
+    }
+}
+</script>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
+
+<div id="app" class="flex-1 flex flex-col"></div>
+
+<!-- Firebase SDK Imports -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// Global app environment setup
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'geoterra-land-mapping-default';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+let app, db, auth;
+let currentUserSession = null;
+let mobileMenuOpen = false;
+let authMode = 'login'; // 'login' or 'register'
+let isSubmitting = false; // Loading animation state flag
+
+// Pre-configured Users database (will sync with localStorage for registered users)
+let allUsers = [
+    { username: 'akmjobayer', password: '123', fullName: 'AKM Jobayer', role: 'Lead Surveyor & Landowner', district: 'Dhaka Sadar', phone: '+880 1711-223344', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' },
+{ username: 'tanvirh', password: '123', fullName: 'Tanvir Hossain', role: 'Agricultural Landowner', district: 'Gazipur', phone: '+880 1812-334455', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' },
+{ username: 'sadia_akter', password: '123', fullName: 'Sadia Akter', role: 'Estate Owner', district: 'Chittagong', phone: '+880 1913-445566', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80' },
+{ username: 'rahim_mia', password: '123', fullName: 'Rahim Mia', role: 'Farmer & Landholder', district: 'Sylhet', phone: '+880 1714-556677', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' },
+{ username: 'noshin_tabassum', password: '123', fullName: 'Noshin Tabassum', role: 'Land Administrator', district: 'Rajshahi', phone: '+880 1515-667788', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80' },
+{ username: 'arif_chowdhury', password: '123', fullName: 'Arif Chowdhury', role: 'Agri-Business Owner', district: 'Comilla', phone: '+880 1816-778899', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80' },
+{ username: 'farhana_jahan', password: '123', fullName: 'Farhana Jahan', role: 'Property Registrar', district: 'Khulna', phone: '+880 1917-889900', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80' },
+{ username: 'kamrul_islam', password: '123', fullName: 'Kamrul Islam', role: 'Land Supervisor', district: 'Bogra', phone: '+880 1618-990011', avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80' },
+{ username: 'nusrat_jahan', password: '123', fullName: 'Nusrat Jahan', role: 'Surveyor Assistant', district: 'Barisal', phone: '+880 1719-001122', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80' },
+{ username: 'hasan_ali', password: '123', fullName: 'Hasan Ali', role: 'Farm Manager', district: 'Mymensingh', phone: '+880 1810-112233', avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80' }
+];
+
+// Default initial land plots for preset users
+const INITIAL_LANDS = {
+    'akmjobayer': [
+        {
+            id: 'plot-101',
+            landNumber: 'DAG-8842',
+            mouza: 'Uttara Model Town, Sector 12',
+            area: '12.5 Decimals',
+            coordinates: '23.8759° N, 90.3795° E',
+            currentCrop: 'Paddy (Aman Rice)',
+            pastHistory: 'Wheat (Winter 2024), Jute (Summer 2024)',
+            imageVerification: 'Verified',
+            policeVerification: 'Approved & Cleared',
+            cropVerification: 'Verified by Agri Officer',
+            landImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
+            notes: 'High fertility alluvial soil. Fully fenced.'
+        }
+    ]
+};
+
+// ===== SECURITY & FEATURE EXTENSIONS =====
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const enc = new TextEncoder();
+const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+async function sha256(t) { return hex(await crypto.subtle.digest('SHA-256', enc.encode(t))); }
+async function hashPw(pw, salt) {
+    const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+    return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(salt), iterations: 120000, hash: 'SHA-256' }, key, 256));
+}
+async function mkCred(pw) { const salt = hex(crypto.getRandomValues(new Uint8Array(16))); return { salt, passHash: await hashPw(pw, salt) }; }
+const strongPw = p => p.length >= 8 && p.length <= 32 && /[A-Za-z]/.test(p) && /\d/.test(p);
+async function migrateUsers() {
+    let ch = false;
+    for (const u of allUsers) if (u.password !== undefined) { Object.assign(u, await mkCred(u.password)); delete u.password; ch = true; }
+    if (ch) saveAllUsers();
+}
+// Brute-force lockout (5 failed attempts = 60s lock)
+const getFails = () => { try { return JSON.parse(localStorage.getItem('geoterra_fails')) || {}; } catch (e) { return {}; } };
+function recordFail(u) {
+    const f = getFails(), r = f[u] || { n: 0, until: 0 };
+    r.n++; if (r.n >= 5) { r.until = Date.now() + 60000; r.n = 0; }
+    f[u] = r; localStorage.setItem('geoterra_fails', JSON.stringify(f));
+    audit('Failed sign-in attempt', u);
+}
+function clearFails(u) { const f = getFails(); delete f[u]; localStorage.setItem('geoterra_fails', JSON.stringify(f)); }
+function getLockRemaining(u) { const r = getFails()[u]; return r ? Math.max(0, Math.ceil((r.until - Date.now()) / 1000)) : 0; }
+// Audit log
+const getAudit = (u = currentUserSession && currentUserSession.username) => { try { return JSON.parse(localStorage.getItem('geoterra_audit_' + u)) || []; } catch (e) { return []; } };
+function audit(action, u = currentUserSession && currentUserSession.username) {
+    if (!u) return;
+    const l = getAudit(u); l.unshift({ t: new Date().toISOString(), a: action });
+    localStorage.setItem('geoterra_audit_' + u, JSON.stringify(l.slice(0, 100)));
+}
+// Auto sign-out after 10 minutes idle
+let lastActive = Date.now();
+window.touchActivity = () => { lastActive = Date.now(); };
+['click', 'keydown', 'touchstart', 'mousemove'].forEach(e => document.addEventListener(e, () => { lastActive = Date.now(); }, { passive: true }));
+setInterval(() => {
+    if (currentUserSession && Date.now() - lastActive > 600000) {
+        audit('Session expired (inactivity)'); handleLogout();
+        showModalMessage('Session Expired', 'You were signed out after 10 minutes of inactivity to protect your land records.', 'info');
+    }
+}, 15000);
+// Tamper-evident record fingerprints
+async function plotFp(p) { return (await sha256(JSON.stringify([p.landNumber, p.mouza, p.area, p.coordinates, p.currentCrop, p.imageVerification, p.policeVerification, p.cropVerification, p.notes]))).slice(0, 16); }
+async function storeFingerprints() { const m = {}; for (const p of userLands) m[p.id] = await plotFp(p); localStorage.setItem('geoterra_fp_' + currentUserSession.username, JSON.stringify(m)); }
+async function fillFingerprints() {
+    let m = {}; try { m = JSON.parse(localStorage.getItem('geoterra_fp_' + currentUserSession.username)) || {}; } catch (e) {}
+    for (const p of userLands) {
+        const el = document.getElementById('fp-' + p.id); if (!el) continue;
+        const cur = await plotFp(p), ok = !m[p.id] || m[p.id] === cur;
+        el.innerHTML = `<code class="font-mono text-[11px]">${cur}</code> <span class="px-2 py-0.5 rounded text-[10px] font-bold ${ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${ok ? 'Intact' : 'Changed outside portal'}</span>`;
+    }
+}
+// District & police data (unit names only; verify contacts on official sites)
+const DISTRICTS = [
+    { k: ['dhaka'], n: 'Dhaka', lat: 23.8103, lon: 90.4125, police: 'Dhaka Metropolitan Police (DMP)', type: 'Metropolitan Police' },
+    { k: ['gazipur'], n: 'Gazipur', lat: 23.9999, lon: 90.4203, police: 'Gazipur Metropolitan Police (GMP)', type: 'Metropolitan Police' },
+    { k: ['chittagong', 'chattogram'], n: 'Chattogram', lat: 22.3569, lon: 91.7832, police: 'Chattogram Metropolitan Police (CMP)', type: 'Metropolitan Police' },
+    { k: ['sylhet'], n: 'Sylhet', lat: 24.8949, lon: 91.8687, police: 'Sylhet Metropolitan Police (SMP)', type: 'Metropolitan Police' },
+    { k: ['rajshahi'], n: 'Rajshahi', lat: 24.3745, lon: 88.6042, police: 'Rajshahi Metropolitan Police (RMP)', type: 'Metropolitan Police' },
+    { k: ['khulna'], n: 'Khulna', lat: 22.8456, lon: 89.5403, police: 'Khulna Metropolitan Police (KMP)', type: 'Metropolitan Police' },
+    { k: ['barisal', 'barishal'], n: 'Barishal', lat: 22.7010, lon: 90.3535, police: 'Barishal Metropolitan Police (BMP)', type: 'Metropolitan Police' },
+    { k: ['comilla', 'cumilla'], n: 'Cumilla', lat: 23.4607, lon: 91.1809, police: 'Cumilla District Police', type: 'District Police (SP Office)' },
+    { k: ['bogra', 'bogura'], n: 'Bogura', lat: 24.8465, lon: 89.3773, police: 'Bogura District Police', type: 'District Police (SP Office)' },
+    { k: ['mymensingh'], n: 'Mymensingh', lat: 24.7471, lon: 90.4203, police: 'Mymensingh District Police', type: 'District Police (SP Office)' },
+    { k: ['rangpur'], n: 'Rangpur', lat: 25.7439, lon: 89.2752, police: 'Rangpur Metropolitan Police (RMP)', type: 'Metropolitan Police' }
+];
+function districtInfo(d) {
+    const s = (d || '').toLowerCase();
+    return DISTRICTS.find(x => x.k.some(k => s.includes(k))) || { n: d || 'Your district', lat: 23.685, lon: 90.356, police: (d || 'Local') + ' District Police', type: 'District Police (SP Office)' };
+}
+function parseCoords(s) {
+    const m = String(s).match(/(-?\d+(?:\.\d+)?)\s*°?\s*([NS])?[\s,;]+(-?\d+(?:\.\d+)?)\s*°?\s*([EW])?/i);
+    if (!m) return null;
+    let la = +m[1], lo = +m[3]; if (/s/i.test(m[2] || '')) la = -la; if (/w/i.test(m[4] || '')) lo = -lo;
+    return Math.abs(la) <= 90 && Math.abs(lo) <= 180 ? { lat: la, lon: lo } : null;
+}
+// Live weather (Open-Meteo, free, no key)
+const WX = {};
+function wxInfo(c) {
+    if (c === 0) return ['Clear sky', 'fa-sun']; if (c <= 2) return ['Partly cloudy', 'fa-cloud-sun']; if (c === 3) return ['Overcast', 'fa-cloud'];
+    if (c <= 48) return ['Fog', 'fa-smog']; if (c <= 57) return ['Drizzle', 'fa-cloud-rain']; if (c <= 67) return ['Rain', 'fa-cloud-showers-heavy'];
+    if (c <= 77) return ['Snow', 'fa-snowflake']; if (c <= 82) return ['Rain showers', 'fa-cloud-showers-heavy']; return ['Thunderstorm', 'fa-cloud-bolt'];
+}
+async function getWeather(lat, lon) {
+    const k = lat.toFixed(2) + ',' + lon.toFixed(2);
+    if (WX[k] && Date.now() - WX[k].t < 600000) return WX[k].d;
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=auto&forecast_days=7`);
+    if (!r.ok) throw new Error('weather'); const d = await r.json(); WX[k] = { t: Date.now(), d }; return d;
+}
+function advisories(d) {
+    const c = d.current, dy = d.daily, a = [];
+    const rain3 = dy.precipitation_sum.slice(0, 3).reduce((x, y) => x + (y || 0), 0);
+    if (c.temperature_2m >= 36) a.push(['red', 'Extreme heat: irrigate early morning or evening and shade young plants.']);
+    if (c.wind_speed_10m >= 40) a.push(['red', 'Strong winds: secure fences, tall crops and storage sheds.']);
+    if (rain3 >= 50) a.push(['red', `Heavy rain expected (~${Math.round(rain3)} mm in 3 days): clear drainage, delay spraying, harvest ripe crop early.`]);
+    else if (Math.max(...dy.precipitation_probability_max.slice(0, 3).map(x => x || 0)) >= 60) a.push(['amber', 'Rain likely within 3 days: plan sowing, spraying and harvest around it.']);
+    if (!a.length) a.push(['green', 'No weather risks detected. Good conditions for field work.']);
+    return a;
+}
+function wxHtml(d) {
+    const c = d.current, [lbl, ic] = wxInfo(c.weather_code);
+    const days = d.daily.time.map((t, i) => {
+        const dn = new Date(t + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short' });
+        return `<div class="text-center bg-slate-50 border border-slate-200 rounded-xl p-2 min-w-[62px]"><div class="text-[10px] font-bold text-slate-500">${i ? dn : 'Today'}</div><i class="fa-solid ${wxInfo(d.daily.weather_code[i])[1]} text-emerald-600 my-1"></i><div class="text-xs font-bold">${Math.round(d.daily.temperature_2m_max[i])}°</div><div class="text-[10px] text-slate-400">${Math.round(d.daily.temperature_2m_min[i])}°</div><div class="text-[10px] text-blue-600"><i class="fa-solid fa-droplet"></i> ${d.daily.precipitation_probability_max[i] ?? 0}%</div></div>`;
+    }).join('');
+    const adv = advisories(d).map(([k, m]) => `<div class="text-xs p-2.5 rounded-lg border ${k === 'red' ? 'bg-red-50 border-red-200 text-red-700' : k === 'amber' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-green-50 border-green-200 text-green-700'}">${esc(m)}</div>`).join('');
+    return `<div class="flex items-center gap-4"><i class="fa-solid ${ic} text-4xl text-emerald-600"></i><div><div class="text-3xl font-black text-slate-800">${Math.round(c.temperature_2m)}°C</div><div class="text-xs text-slate-500">${lbl} &bull; feels ${Math.round(c.apparent_temperature)}°C</div></div></div>
+    <div class="grid grid-cols-3 gap-2 text-center text-xs my-4"><div class="bg-slate-50 rounded-lg p-2"><i class="fa-solid fa-droplet text-blue-500"></i><div class="font-bold">${c.relative_humidity_2m}%</div><div class="text-[10px] text-slate-400">Humidity</div></div><div class="bg-slate-50 rounded-lg p-2"><i class="fa-solid fa-wind text-slate-500"></i><div class="font-bold">${c.wind_speed_10m} km/h</div><div class="text-[10px] text-slate-400">Wind</div></div><div class="bg-slate-50 rounded-lg p-2"><i class="fa-solid fa-cloud-rain text-indigo-500"></i><div class="font-bold">${c.precipitation} mm</div><div class="text-[10px] text-slate-400">Rain now</div></div></div>
+    <div class="space-y-2 mb-4">${adv}</div><div class="text-[10px] font-bold uppercase text-slate-400 mb-2">7-day forecast</div><div class="flex gap-2 overflow-x-auto pb-1">${days}</div>
+    <p class="text-[10px] text-slate-400 mt-3">Live data: Open-Meteo. For cyclone/flood warnings follow the Bangladesh Meteorological Department (BMD).</p>`;
+}
+// Tabs
+let selectedPlotId = null;
+const TITLES = { dashboard: 'Land Registry Dashboard', lands: 'My Land Plots & Mapping', verifications: 'Verification & Clearance Status', intel: 'Satellite View & Live Weather', police: 'Police Info & Emergency', security: 'Security Center' };
+function navExtra(m) {
+    return [['intel', 'fa-satellite', 'Satellite & Weather'], ['police', 'fa-building-shield', 'Police & Emergency'], ['security', 'fa-user-shield', 'Security Center']].map(([t, i, l]) => m
+        ? `<button type="button" onclick="switchTab('${t}')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold ${activeTab === t ? 'bg-emerald-600 text-white' : 'hover:bg-slate-800'}"><i class="fa-solid ${i} w-5"></i> ${l}</button>`
+        : `<button type="button" onclick="switchTab('${t}')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${activeTab === t ? 'bg-emerald-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}"><i class="fa-solid ${i} w-5"></i> ${l}</button>`).join('');
+}
+function renderTab(a, b) {
+    return activeTab === 'dashboard' ? renderDashboardTab(a, b) : activeTab === 'lands' ? renderLandsTab() : activeTab === 'intel' ? renderIntelTab()
+        : activeTab === 'police' ? renderPoliceTab() : activeTab === 'security' ? renderSecurityTab() : renderVerificationsTab();
+}
+function afterRender() {
+    if (!currentUserSession) return;
+    if (activeTab === 'intel') initIntel(); else if (activeTab === 'dashboard') initDashWx(); else if (activeTab === 'security') fillFingerprints();
+}
+const curPlot = () => userLands.find(p => p.id === selectedPlotId) || userLands[0];
+window.selectPlot = id => { selectedPlotId = id; renderApp(); };
+window.viewPlotIntel = id => { selectedPlotId = id; switchTab('intel'); };
+window.refreshWx = () => { Object.keys(WX).forEach(k => delete WX[k]); renderApp(); };
+const card = 'bg-white rounded-2xl border border-slate-200 shadow-xs';
+function renderIntelTab() {
+    if (!userLands.length) return `<div class="${card} p-12 text-center text-sm text-slate-500">Register a land plot first to see its satellite view and weather.</div>`;
+    const p = curPlot();
+    return `<div class="space-y-6"><div class="flex flex-wrap justify-between items-center gap-3"><div><h3 class="text-base font-bold text-slate-800">Satellite View & Live Weather</h3><p class="text-xs text-slate-500">Pick a plot to see its location from space and the weather over it.</p></div>
+    <div class="flex gap-2"><select onchange="selectPlot(this.value)" class="px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold bg-white">${userLands.map(x => `<option value="${esc(x.id)}" ${x.id === p.id ? 'selected' : ''}>${esc(x.landNumber)} - ${esc(x.mouza)}</option>`).join('')}</select>
+    <button type="button" onclick="refreshWx()" class="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-rotate"></i> Refresh</button></div></div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6"><div class="lg:col-span-2 ${card} overflow-hidden"><div id="sat-map" style="height:460px" class="bg-slate-200 z-0"></div>
+    <div class="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-200"><i class="fa-solid fa-circle-info"></i> Green circle = approximate extent from the recorded area (${esc(p.area)}). It is <b>not</b> a legal survey boundary. GPS: ${esc(p.coordinates)}</div></div>
+    <div class="${card} p-5"><h4 class="font-bold text-slate-800 text-sm mb-3"><i class="fa-solid fa-cloud-sun text-emerald-600"></i> Weather at ${esc(p.landNumber)}</h4><div id="wx-box" class="text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin"></i> Loading live forecast...</div></div></div></div>`;
+}
+async function initIntel() {
+    const p = curPlot(); if (!p) return;
+    const c = parseCoords(p.coordinates) || districtInfo(currentUserSession.district);
+    const mapEl = document.getElementById('sat-map');
+    if (window.L && mapEl) {
+        const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' });
+        const lab = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+        const map = L.map(mapEl, { layers: [sat, lab] }).setView([c.lat, c.lon], 18);
+        L.control.layers({ 'Satellite': sat, 'Street map': osm }, { 'Place labels': lab }).addTo(map);
+        L.circle([c.lat, c.lon], { radius: Math.sqrt((parseFloat(p.area) || 10) * 40.47 / Math.PI), color: '#16a34a', weight: 2, fillOpacity: 0.15 }).addTo(map);
+        L.marker([c.lat, c.lon]).addTo(map).bindPopup(`<b>${esc(p.landNumber)}</b><br>${esc(p.mouza)}`).openPopup();
+    } else if (mapEl) mapEl.innerHTML = '<div class="p-8 text-xs text-slate-500">Map could not load. Check your internet connection.</div>';
+    try { const d = await getWeather(c.lat, c.lon); const b = document.getElementById('wx-box'); if (b) b.innerHTML = wxHtml(d); }
+    catch (e) { const b = document.getElementById('wx-box'); if (b) b.innerHTML = '<span class="text-red-600">Weather unavailable. Check your connection and press Refresh.</span>'; }
+}
+async function initDashWx() {
+    const p = userLands[0], c = (p && parseCoords(p.coordinates)) || districtInfo(currentUserSession.district);
+    try {
+        const d = await getWeather(c.lat, c.lon), el = document.getElementById('dash-weather'); if (!el) return;
+        const [l, ic] = wxInfo(d.current.weather_code), [k, m] = advisories(d)[0];
+        el.innerHTML = `<div class="${card} p-4 flex flex-wrap items-center gap-4"><i class="fa-solid ${ic} text-3xl text-emerald-600"></i><div><div class="text-lg font-black text-slate-800">${Math.round(d.current.temperature_2m)}°C <span class="text-xs font-medium text-slate-500">${l} &bull; Humidity ${d.current.relative_humidity_2m}%</span></div><div class="text-xs ${k === 'green' ? 'text-green-700' : k === 'amber' ? 'text-amber-700' : 'text-red-700'}">${esc(m)}</div></div><button type="button" onclick="switchTab('intel')" class="ml-auto px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold">Satellite & forecast &rarr;</button></div>`;
+    } catch (e) {}
+}
+// Police & emergency
+const INC_TYPES = ['Boundary dispute', 'Encroachment / illegal occupation', 'Illegal construction', 'Theft or damage on land', 'Suspected forged document', 'Threat or harassment'];
+const getInc = () => { try { return JSON.parse(localStorage.getItem('geoterra_inc_' + currentUserSession.username)) || []; } catch (e) { return []; } };
+window.submitIncident = function (e) {
+    e.preventDefault(); const f = e.target.elements, list = getInc();
+    const ref = 'INC-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.floor(1000 + Math.random() * 9000);
+    list.unshift({ ref, type: f.type.value, plot: f.plot.value, desc: f.desc.value.trim(), t: new Date().toISOString() });
+    localStorage.setItem('geoterra_inc_' + currentUserSession.username, JSON.stringify(list));
+    audit('Logged incident ' + ref);
+    showModalMessage('Incident Logged', `Reference ${ref} saved in your portal. Take this reference to your local police station to file a formal complaint or GD.`, 'success');
+};
+function renderPoliceTab() {
+    const d = districtInfo(currentUserSession.district), inc = getInc();
+    const gm = (la, lo, z) => `https://www.google.com/maps/search/police+station/@${la},${lo},${z}z`;
+    const nums = [['999', 'National Emergency Service (police, fire, ambulance)'], ['16122', 'Land Ministry helpline'], ['106', 'Anti-Corruption Commission hotline'], ['109', 'Violence against women & children helpline']];
+    return `<div class="space-y-6"><div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-1"><i class="fa-solid fa-building-shield text-emerald-600"></i> Police Unit for ${esc(currentUserSession.district)}</h3>
+    <div class="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-xl"><div class="font-black text-slate-800">${esc(d.police)}</div><div class="text-xs text-slate-500">${esc(d.type)}</div></div>
+    <a href="${gm(d.lat, d.lon, 12)}" target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-location-dot"></i> Find police stations in ${esc(d.n)}</a>
+    <p class="text-[11px] text-slate-400 mt-3">Unit names shown for reference. Confirm station contacts on the official Bangladesh Police website or at the station.</p></div>
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-3"><i class="fa-solid fa-phone-volume text-red-500"></i> Emergency & Land Helplines</h3><div class="space-y-2">${nums.map(([n, t]) => `<a href="tel:${n}" class="flex items-center gap-3 p-3 border border-slate-200 rounded-xl hover:bg-slate-50"><span class="w-14 text-center font-black text-lg text-red-600">${n}</span><span class="text-xs text-slate-600">${t}</span></a>`).join('')}</div></div></div>
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-1"><i class="fa-solid fa-file-circle-exclamation text-amber-600"></i> Land Incident Log</h3><p class="text-xs text-slate-500 mb-4">Record a dispute or encroachment with a time-stamped reference, then file it formally at the police station.</p>
+    <form onsubmit="submitIncident(event)" class="grid grid-cols-1 md:grid-cols-2 gap-3"><select name="plot" class="px-3 py-2 border border-slate-300 rounded-lg text-xs">${userLands.map(x => `<option value="${esc(x.landNumber)}">${esc(x.landNumber)} - ${esc(x.mouza)}</option>`).join('') || '<option value="N/A">No plot</option>'}</select>
+    <select name="type" class="px-3 py-2 border border-slate-300 rounded-lg text-xs">${INC_TYPES.map(t => `<option>${t}</option>`).join('')}</select>
+    <textarea name="desc" required rows="2" maxlength="500" placeholder="What happened, when, who was involved..." class="md:col-span-2 px-3 py-2 border border-slate-300 rounded-lg text-xs"></textarea>
+    <button class="md:col-span-2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold">Log Incident</button></form>
+    <div class="mt-4 space-y-2">${inc.map(i => `<div class="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"><b>${esc(i.ref)}</b> &bull; ${esc(i.type)} &bull; ${esc(i.plot)} <span class="text-slate-400">(${new Date(i.t).toLocaleString()})</span><div class="text-slate-600 mt-1">${esc(i.desc)}</div></div>`).join('') || '<p class="text-xs text-slate-400">No incidents logged.</p>'}</div></div>
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-3">Police Clearance per Plot</h3><div class="space-y-2">${userLands.map(p => { const c = parseCoords(p.coordinates) || d; return `<div class="flex flex-wrap items-center justify-between gap-2 p-3 border border-slate-200 rounded-xl text-xs"><div><b>${esc(p.landNumber)}</b> <span class="text-slate-500">${esc(p.mouza)}</span></div><div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded font-bold ${p.policeVerification.includes('Approved') ? 'bg-green-100 text-green-700' : p.policeVerification.includes('Disputed') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}">${esc(p.policeVerification)}</span><a target="_blank" rel="noopener noreferrer" href="${gm(c.lat, c.lon, 14)}" class="text-emerald-600 font-bold">Nearest stations &rarr;</a></div></div>`; }).join('')}</div></div></div>`;
+}
+// Security center
+window.changePassword = async function (e) {
+    e.preventDefault(); const f = e.target.elements, u = currentUserSession;
+    if (await hashPw(f.cur.value, u.salt) !== u.passHash) return showModalMessage('Error', 'Current password is incorrect.', 'error');
+    if (!strongPw(f.nw.value)) return showModalMessage('Weak Password', 'Use 8-32 characters with letters and numbers.', 'error');
+    Object.assign(u, await mkCred(f.nw.value)); saveAllUsers(); audit('Password changed');
+    showModalMessage('Password Updated', 'Your password was changed securely.', 'success');
+};
+window.downloadBackup = function () {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify({ exported: new Date().toISOString(), user: currentUserSession.username, lands: userLands }, null, 2)], { type: 'application/json' }));
+    a.download = 'land-backup-' + currentUserSession.username + '.json'; a.click(); audit('Exported backup');
+};
+function renderSecurityTab() {
+    const feats = ['Passwords hashed with salted PBKDF2-SHA-256', 'Account lockout after 5 failed sign-ins', 'Auto sign-out after 10 minutes idle', 'Input sanitising against script injection', 'Tamper-evident fingerprint for every land record', 'Personal activity audit log'];
+    return `<div class="space-y-6"><div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-3"><i class="fa-solid fa-user-shield text-emerald-600"></i> Active Protections</h3><ul class="space-y-2 text-xs text-slate-700">${feats.map(x => `<li><i class="fa-solid fa-circle-check text-emerald-500 mr-2"></i>${x}</li>`).join('')}</ul>
+    <p class="text-[11px] text-slate-400 mt-4">Note: this portal stores data in your browser. For real deployment add server-side authentication, HTTPS and two-factor login.</p>
+    <button type="button" onclick="downloadBackup()" class="mt-4 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-download"></i> Download my records (backup)</button></div>
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-3"><i class="fa-solid fa-key text-amber-600"></i> Change Password</h3>
+    <form onsubmit="changePassword(event)" class="space-y-3"><input type="password" name="cur" required placeholder="Current password" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"><input type="password" name="nw" required maxlength="32" placeholder="New password (8-32, letters + numbers)" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"><button class="w-full py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold">Update Password</button></form></div></div>
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-3">Record Integrity</h3><div class="space-y-2">${userLands.map(p => `<div class="flex flex-wrap justify-between gap-2 p-3 border border-slate-200 rounded-xl text-xs"><b>${esc(p.landNumber)}</b><span id="fp-${esc(p.id)}" class="text-slate-400">Computing...</span></div>`).join('') || '<p class="text-xs text-slate-400">No records.</p>'}</div></div>
+    <div class="${card} p-6"><h3 class="font-bold text-slate-800 text-sm mb-3">Activity Log</h3><div class="max-h-72 overflow-y-auto divide-y divide-slate-100 text-xs">${getAudit().map(l => `<div class="py-2 flex justify-between gap-3"><span>${esc(l.a)}</span><span class="text-slate-400 whitespace-nowrap">${new Date(l.t).toLocaleString()}</span></div>`).join('') || '<p class="text-slate-400">No activity yet.</p>'}</div></div></div>`;
+}
+
+let activeTab = 'dashboard';
+let userLands = [];
+let editingLandId = null;
+let messageBoxConfig = { show: false, title: '', message: '', type: 'info' };
+
+function showModalMessage(title, message, type = 'info') {
+    messageBoxConfig = { show: true, title, message, type };
+    renderApp();
+}
+
+window.closeModalMessage = function() {
+    messageBoxConfig.show = false;
+    const msgEl = document.getElementById('message-modal');
+    if (msgEl) msgEl.remove();
+    renderApp();
+};
+
+window.closeLandFormModal = function() {
+    const formEl = document.getElementById('land-modal');
+    if (formEl) formEl.remove();
+};
+
+window.toggleMobileMenu = function() {
+    mobileMenuOpen = !mobileMenuOpen;
+    renderApp();
+};
+
+window.setAuthMode = function(mode) {
+    authMode = mode;
+    renderApp();
+};
+
+// Load saved registered users from localStorage on startup
+function loadRegisteredUsers() {
+    const savedUsers = localStorage.getItem('geoterra_all_users');
+    if (savedUsers) {
+        try {
+            const parsed = JSON.parse(savedUsers);
+            allUsers = parsed;
+        } catch(e) {
+            console.error("Error loading users", e);
+        }
+    }
+}
+
+function saveAllUsers() {
+    localStorage.setItem('geoterra_all_users', JSON.stringify(allUsers));
+}
+
+// Initialize Firebase
+async function initFirebase() {
+    loadRegisteredUsers();
+    await migrateUsers();
+    if (firebaseConfig) {
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (e) {
+            console.error("Firebase init error:", e);
+        }
+    }
+}
+
+// Load lands for current user
+async function loadUserLands() {
+    if (!currentUserSession) return;
+    const username = currentUserSession.username;
+    
+    if (db && auth && auth.currentUser) {
+        try {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', `lands_${username}`);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                userLands = docSnap.data().plots || [];
+            } else {
+                userLands = INITIAL_LANDS[username] || [
+                    {
+                        id: 'plot-' + Math.floor(Math.random() * 9000 + 1000),
+                        landNumber: 'DAG-' + Math.floor(Math.random() * 9000 + 1000),
+                        mouza: currentUserSession.district + ' Central Zone',
+                        area: '10.0 Decimals',
+                        coordinates: '23.7000° N, 90.0000° E',
+                        currentCrop: 'Mixed Seasonal Crops',
+                        pastHistory: 'Fallow (2024)',
+                        imageVerification: 'Pending Review',
+                        policeVerification: 'Pending Station Clearance',
+                        cropVerification: 'Pending Inspection',
+                        landImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
+                        notes: 'Newly registered land record.'
+                    }
+                ];
+                await saveUserLandsToDB();
+            }
+        } catch (err) {
+            loadLocalFallback(username);
+        }
+    } else {
+        loadLocalFallback(username);
+    }
+    renderApp();
+}
+
+function loadLocalFallback(username) {
+    const saved = localStorage.getItem('geoterra_lands_' + username);
+    if (saved) {
+        try { userLands = JSON.parse(saved); } catch(e) { userLands = []; }
+    } else {
+        userLands = INITIAL_LANDS[username] || [
+            {
+                id: 'plot-' + Math.floor(Math.random() * 9000 + 1000),
+                landNumber: 'DAG-' + Math.floor(Math.random() * 9000 + 1000),
+                mouza: currentUserSession.district + ' Mouza',
+                area: '10.0 Decimals',
+                coordinates: '23.7800° N, 90.4100° E',
+                currentCrop: 'Paddy / Rice',
+                pastHistory: 'Vegetables (2024)',
+                imageVerification: 'Pending Review',
+                policeVerification: 'Pending Station Clearance',
+                cropVerification: 'Pending Inspection',
+                landImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
+                notes: 'Registered under municipal survey.'
+            }
+        ];
+    }
+}
+
+async function saveUserLandsToDB() {
+    if (!currentUserSession) return;
+    const username = currentUserSession.username;
+    localStorage.setItem('geoterra_lands_' + username, JSON.stringify(userLands));
+    await storeFingerprints();
+    
+    if (db && auth && auth.currentUser) {
+        try {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', `lands_${username}`);
+            await setDoc(docRef, { plots: userLands, updatedAt: new Date().toISOString() });
+        } catch (err) {
+            console.error("Error saving to Firestore:", err);
+        }
+    }
+}
+
+// LOGIN WITH ANIMATED DELAY
+window.handleLogin = async function(event) {
+    event.preventDefault();
+    const form = event.target;
+    const usernameInput = form.username.value.trim().toLowerCase();
+    const passwordInput = form.password.value.trim();
+    
+    // Enable loading spinner state
+    isSubmitting = true;
+    renderApp();
+    
+    // Artificial delay for smooth animation experience (1.2 seconds)
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    
+    let matchedUser = null;
+    if (getLockRemaining(usernameInput) > 0) {
+        isSubmitting = false;
+        showModalMessage('Account Temporarily Locked', `Too many failed attempts. Try again in ${getLockRemaining(usernameInput)} seconds.`, 'error');
+        return;
+    }
+    const cand = allUsers.find(u => u.username === usernameInput);
+    if (cand && cand.passHash && await hashPw(passwordInput, cand.salt) === cand.passHash) matchedUser = cand;
+    isSubmitting = false;
+    
+    if (matchedUser) {
+        currentUserSession = matchedUser; clearFails(usernameInput); audit('Signed in'); touchActivity();
+        localStorage.setItem('geoterra_current_user', JSON.stringify({ username: matchedUser.username }));
+        await loadUserLands();
+        showModalMessage('Login Successful', `Welcome back, ${matchedUser.fullName}! Portal loaded successfully.`, 'success');
+    } else {
+        recordFail(usernameInput);
+        showModalMessage('Authentication Failed', 'Invalid username or password. Please check your credentials or register a new account.', 'error');
+    }
+};
+
+// REGISTER WITH ANIMATED DELAY
+window.handleRegister = async function(event) {
+    event.preventDefault();
+    const form = event.target;
+    const username = form.username.value.trim().toLowerCase();
+    const password = form.password.value.trim();
+    const fullName = form.fullName.value.trim();
+    const role = form.role.value.trim();
+    const district = form.district.value.trim();
+    const phone = form.phone.value.trim();
+    
+    if (password.length > 32) {
+        showModalMessage('Registration Error', 'Password cannot exceed 32 digits/characters.', 'error');
+        return;
+    }
+    
+    if (!strongPw(password)) {
+        showModalMessage('Weak Password', 'Use 8-32 characters with at least one letter and one number.', 'error');
+        return;
+    }
+    
+    const existingUser = allUsers.find(u => u.username === username);
+    if (existingUser) {
+        showModalMessage('Username Taken', 'This username is already registered. Please choose a different username.', 'error');
+        return;
+    }
+    
+    // Enable loading animation state
+    isSubmitting = true;
+    renderApp();
+    
+    // Artificial delay for smooth animation experience (1.2 seconds)
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    
+    const avatars = [
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+        'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80'
+    ];
+    const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
+    
+    const newUser = {
+        username,
+        password,
+        fullName,
+        role: role || 'Registered Landowner',
+        district: district || 'Dhaka',
+        phone: phone || '+880 1700-000000',
+        avatar: randomAvatar
+    };
+    
+    Object.assign(newUser, await mkCred(password)); delete newUser.password; allUsers.push(newUser);
+    saveAllUsers();
+    
+    currentUserSession = newUser;
+    localStorage.setItem('geoterra_current_user', JSON.stringify({ username: newUser.username })); audit('Account created');
+    await loadUserLands();
+    isSubmitting = false;
+    
+    showModalMessage('Registration Successful', `Welcome to GeoTerra, ${fullName}! Your account has been created successfully.`, 'success');
+};
+
+window.handleLogout = function() {
+    audit('Signed out');
+    currentUserSession = null;
+    localStorage.removeItem('geoterra_current_user');
+    userLands = [];
+    activeTab = 'dashboard';
+    mobileMenuOpen = false;
+    authMode = 'login';
+    isSubmitting = false;
+    renderApp();
+};
+
+window.switchTab = function(tabName) {
+    if (tabName === 'directory') {
+        showModalMessage('Access Denied', 'This section is restricted. Contact your administrator.', 'error');
+        return;
+    }
+    activeTab = tabName;
+    mobileMenuOpen = false;
+    renderApp();
+};
+
+window.openAddLandModal = function() {
+    editingLandId = null;
+    renderLandFormModal({
+        landNumber: 'DAG-' + Math.floor(Math.random() * 8999 + 1000),
+                        mouza: currentUserSession.district + ' Mouza',
+                        area: '10.0 Decimals',
+                        coordinates: '23.7800° N, 90.4100° E',
+                        currentCrop: 'Paddy / Rice',
+                        pastHistory: 'Vegetables (2024)',
+                        imageVerification: 'Pending Review',
+                        policeVerification: 'Pending Station Clearance',
+                        cropVerification: 'Pending Inspection',
+                        landImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
+                        notes: 'Registered under municipal survey.'
+    }, false);
+};
+
+window.openEditLandModal = function(id) {
+    const plot = userLands.find(p => p.id === id);
+    if (plot) {
+        editingLandId = id;
+        renderLandFormModal(plot, true);
+    }
+};
+
+window.handleImageUpload = function(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+        showModalMessage('Invalid File', 'Please upload a valid image file (JPG, PNG, or WEBP).', 'error');
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        showModalMessage('File Too Large', 'Please upload an image smaller than 5MB.', 'error');
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const base64Data = e.target.result;
+        const imageUrlInput = document.querySelector('input[name="landImage"]');
+        if (imageUrlInput) imageUrlInput.value = base64Data;
+        const previewImg = document.getElementById('image-preview');
+        if (previewImg) {
+            previewImg.src = base64Data;
+            previewImg.style.display = 'block';
+        }
+        showModalMessage('Image Uploaded', 'Image successfully uploaded and ready for submission.', 'success');
+    };
+    reader.readAsDataURL(file);
+};
+
+// SAVE LAND PLOT WITH ANIMATED DELAY
+window.saveLandPlot = async function(event) {
+    event.preventDefault();
+    const form = event.target;
+    
+    // Show spinner/loading state on save button inside the modal
+    const saveBtn = document.getElementById('modal-save-btn');
+    const originalBtnText = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Saving Record...`;
+    }
+    
+    // Artificial delay for smooth save animation (1.0 second)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const landData = {
+        id: editingLandId || 'plot-' + Date.now(),
+        landNumber: form.landNumber.value,
+        mouza: form.mouza.value,
+        area: form.area.value,
+        coordinates: form.coordinates.value,
+        currentCrop: form.currentCrop.value,
+        pastHistory: form.pastHistory.value,
+        imageVerification: form.imageVerification.value,
+        policeVerification: form.policeVerification.value,
+        cropVerification: form.cropVerification.value,
+        landImage: form.landImage.value || 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80',
+        notes: form.notes.value
+    };
+    
+    if (editingLandId) {
+        const index = userLands.findIndex(p => p.id === editingLandId);
+        if (index !== -1) userLands[index] = landData;
+    } else {
+        userLands.push(landData);
+    }
+    
+    await saveUserLandsToDB();
+    closeLandFormModal();
+    audit((editingLandId ? 'Updated' : 'Registered') + ' land plot ' + landData.landNumber);
+    showModalMessage('Success', editingLandId ? 'Land record updated successfully!' : 'New land plot registered successfully!', 'success');
+};
+
+window.deleteLandPlot = function(id) {
+    if (confirm('Are you sure you want to delete this land plot record?')) {
+        { const d = userLands.find(p => p.id === id); audit('Deleted land plot ' + (d ? d.landNumber : id)); }
+        userLands = userLands.filter(p => p.id !== id);
+        saveUserLandsToDB();
+        showModalMessage('Deleted', 'Land plot record removed from your portal.', 'info');
+    }
+};
+
+function renderLandFormModal(plot, isEdit) {
+    closeLandFormModal();
+    const modalHtml = `
+    <div id="land-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-100 transform transition-all my-8 animate-in fade-in zoom-in duration-200">
+    <div class="bg-gradient-to-r from-emerald-600 to-teal-700 px-6 py-4 flex justify-between items-center text-white">
+    <h3 class="font-bold text-lg flex items-center gap-2">
+    <i class="fa-solid fa-map-location-dot"></i> ${isEdit ? 'Edit Land Plot Record' : 'Register New Land Plot'}
+    </h3>
+    <button type="button" onclick="closeLandFormModal()" class="text-white/80 hover:text-white text-2xl font-bold leading-none">&times;</button>
+    </div>
+    <form onsubmit="saveLandPlot(event)" class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Land / DAG Number *</label>
+    <input type="text" name="landNumber" required value="${esc(plot.landNumber)}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+    </div>
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Mouza / Location Name *</label>
+    <input type="text" name="mouza" required value="${esc(plot.mouza)}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">
+    </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Area / Size *</label>
+    <input type="text" name="area" required value="${esc(plot.area)}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" placeholder="e.g., 14.5 Decimals">
+    </div>
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">GPS Coordinates *</label>
+    <input type="text" name="coordinates" required value="${esc(plot.coordinates)}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" placeholder="23.8103° N, 90.4125° E">
+    </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Current Crop / Plant *</label>
+    <input type="text" name="currentCrop" required value="${esc(plot.currentCrop)}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" placeholder="e.g., Rice, Mango Orchard, Potato">
+    </div>
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Past Agricultural History</label>
+    <input type="text" name="pastHistory" value="${esc(plot.pastHistory || '')}" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm" placeholder="Previous crops grown">
+    </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+    <div>
+    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Image Verification</label>
+    <select name="imageVerification" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg bg-white text-xs font-medium">
+    <option value="Verified" ${plot.imageVerification === 'Verified' ? 'selected' : ''}>Verified</option>
+    <option value="Pending Review" ${plot.imageVerification === 'Pending Review' ? 'selected' : ''}>Pending Review</option>
+    <option value="Rejected" ${plot.imageVerification === 'Rejected' ? 'selected' : ''}>Rejected</option>
+    </select>
+    </div>
+    <div>
+    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Police Station Status</label>
+    <select name="policeVerification" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg bg-white text-xs font-medium">
+    <option value="Approved & Cleared" ${plot.policeVerification.includes('Approved') || plot.policeVerification.includes('Cleared') ? 'selected' : ''}>Approved & Cleared</option>
+    <option value="Pending Station Clearance" ${plot.policeVerification.includes('Pending') ? 'selected' : ''}>Pending Station Clearance</option>
+    <option value="Disputed" ${plot.policeVerification.includes('Disputed') ? 'selected' : ''}>Disputed</option>
+    </select>
+    </div>
+    <div>
+    <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Crop Verification</label>
+    <select name="cropVerification" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg bg-white text-xs font-medium">
+    <option value="Verified by Agri Officer" ${plot.cropVerification.includes('Verified') ? 'selected' : ''}>Verified by Agri Officer</option>
+    <option value="Pending Inspection" ${plot.cropVerification.includes('Pending') ? 'selected' : ''}>Pending Inspection</option>
+    </select>
+    </div>
+    </div>
+    
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Land Image Photo Upload (Required)</label>
+    <div class="space-y-3">
+    <div id="image-preview-container" class="relative bg-slate-100 border-2 border-dashed border-slate-300 rounded-lg p-4 text-center">
+    <img id="image-preview" src="${esc(plot.landImage || '')}" class="max-h-48 mx-auto rounded-lg object-contain" style="${plot.landImage && !plot.landImage.startsWith('data:') ? '' : 'display:none;'}" onerror="this.style.display='none'">
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+    <label class="cursor-pointer flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition group">
+    <i class="fa-solid fa-camera text-emerald-600"></i>
+    <span class="text-xs font-semibold text-emerald-700">Take Photo</span>
+    <input type="file" accept="image/*" capture="environment" onchange="handleImageUpload(this)" class="hidden" />
+    </label>
+    <label class="cursor-pointer flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition group">
+    <i class="fa-solid fa-folder-open text-blue-600"></i>
+    <span class="text-xs font-semibold text-blue-700">Browse Files</span>
+    <input type="file" accept="image/*" onchange="handleImageUpload(this)" class="hidden" />
+    </label>
+    </div>
+    <input type="hidden" name="landImage" value="${esc(plot.landImage || 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80')}">
+    </div>
+    </div>
+    
+    <div>
+    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Surveyor Notes & Remarks</label>
+    <textarea name="notes" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-sm">${esc(plot.notes || '')}</textarea>
+    </div>
+    <div class="pt-3 border-t border-slate-200 flex justify-end gap-3">
+    <button type="button" onclick="closeLandFormModal()" class="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-100 text-sm font-medium">Cancel</button>
+    <button type="submit" id="modal-save-btn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium shadow-md transition flex items-center">Save Land Plot</button>
+    </div>
+    </form>
+    </div>
+    </div>
+    `;
+    const container = document.createElement('div');
+    container.innerHTML = modalHtml;
+    document.body.appendChild(container.firstElementChild);
+}
+
+function renderApp() {
+    const appEl = document.getElementById('app');
+    if (!currentUserSession) {
+        appEl.innerHTML = renderAuthView();
+    } else {
+        appEl.innerHTML = renderPortalLayout();
+    }
+    
+    afterRender();
+    const existingMsg = document.getElementById('message-modal');
+    if (existingMsg) existingMsg.remove();
+    
+    if (messageBoxConfig.show) {
+        const modalDiv = document.createElement('div');
+        modalDiv.id = 'message-modal';
+        modalDiv.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200';
+        modalDiv.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-100 text-center transform transition-all">
+        <div class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${messageBoxConfig.type === 'error' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}">
+        <i class="fa-solid ${messageBoxConfig.type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-check'} text-xl"></i>
+        </div>
+        <h3 class="text-lg font-bold text-slate-800 mb-2">${esc(messageBoxConfig.title)}</h3>
+        <p class="text-sm text-slate-600 mb-6">${esc(messageBoxConfig.message)}</p>
+        <button type="button" onclick="closeModalMessage()" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl text-sm transition shadow-lg">Continue</button>
+        </div>
+        `;
+        document.body.appendChild(modalDiv);
+    }
+}
+
+function renderAuthView() {
+    return `
+    <div class="flex-1 flex flex-col lg:flex-row bg-slate-900 text-white">
+    <!-- Left Hero Section -->
+    <div class="lg:w-1/2 p-8 lg:p-16 flex flex-col justify-between bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 relative overflow-hidden">
+    <div class="absolute inset-0 opacity-10 bg-[radial-gradient(#22c55e_1px,transparent_1px)] [background-size:16px_16px]"></div>
+    <div class="relative z-10">
+    <div class="flex items-center gap-3 mb-8">
+    <div class="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-white">
+    <i class="fa-solid fa-earth-americas text-xl"></i>
+    </div>
+    <span class="font-bold text-xl tracking-tight text-white">GeoTerra <span class="text-emerald-400 font-light">LandPortal</span></span>
+    </div>
+    <h1 class="text-3xl lg:text-5xl font-extrabold tracking-tight mb-4 text-white leading-tight">
+    National Land Mapping & Verification System
+    </h1>
+    <p class="text-slate-300 text-base lg:text-lg mb-8 max-w-lg leading-relaxed">
+    Professional geospatial portal for landowners and surveyors. Register your own custom username, secure your account with a password of up to 32 digits, and manage your plots.
+    </p>
+    </div>
+    <div class="relative z-10 text-xs text-slate-400">
+    &copy; 2026 GeoTerra Land Mapping Bureau &bull; Secure National Database
+    </div>
+    </div>
+    
+    <!-- Right Auth Form Section (Login / Register Tabs with Animated States) -->
+    <div class="lg:w-1/2 p-6 lg:p-12 flex flex-col justify-center bg-slate-900/50 backdrop-blur-md overflow-y-auto">
+    <div class="max-w-md w-full mx-auto bg-slate-800/90 border border-slate-700/80 rounded-2xl p-6 lg:p-8 shadow-2xl">
+    
+    <!-- Mode Switcher Tabs -->
+    <div class="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-xl mb-6">
+    <button type="button" onclick="setAuthMode('login')" class="py-2 text-xs font-bold rounded-lg transition ${authMode === 'login' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}">
+    Sign In
+    </button>
+    <button type="button" onclick="setAuthMode('register')" class="py-2 text-xs font-bold rounded-lg transition ${authMode === 'register' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}">
+    New Registration
+    </button>
+    </div>
+    
+    ${authMode === 'login' ? `
+        <div class="mb-6">
+        <h2 class="text-2xl font-bold text-white mb-1">User Portal Sign In</h2>
+        <p class="text-xs text-slate-400">Enter your username and password to access your secure land parcels.</p>
+        </div>
+        
+        <form onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Username</label>
+        <div class="relative">
+        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fa-solid fa-user"></i></span>
+        <input type="text" name="username" required placeholder="e.g. akmjobayer" ${isSubmitting ? 'disabled' : ''} class="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+        </div>
+        </div>
+        <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Password</label>
+        <div class="relative">
+        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
+        <input type="password" name="password" required placeholder="••••••" ${isSubmitting ? 'disabled' : ''} class="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+        </div>
+        </div>
+        <button type="submit" ${isSubmitting ? 'disabled' : ''} class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center disabled:opacity-75 cursor-pointer">
+        ${isSubmitting ? `
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Signing in securely...
+            ` : `Access Land Dashboard`}
+            </button>
+            </form>
+            ` : `
+            <div class="mb-6">
+            <h2 class="text-2xl font-bold text-white mb-1">Create New Account</h2>
+            <p class="text-xs text-slate-400">Choose your custom username and a secure password (up to 32 digits/characters).</p>
+            </div>
+            
+            <form onsubmit="handleRegister(event)" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Desired Username *</label>
+            <input type="text" name="username" required placeholder="e.g. akam_jowar" ${isSubmitting ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+            </div>
+            <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Password (8-32 characters) *</label>
+            <input type="password" name="password" required maxlength="32" placeholder="Letters + numbers" ${isSubmitting ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+            </div>
+            </div>
+            
+            <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Full Name *</label>
+            <input type="text" name="fullName" required placeholder="e.g. Akam Jowar" ${isSubmitting ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Role / Title</label>
+            <input type="text" name="role" placeholder="Landowner" ${isSubmitting ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+            </div>
+            <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">District</label>
+            <input type="text" name="district" placeholder="Dhaka" ${isSubmitting ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+            </div>
+            <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Phone Number</label>
+            <input type="text" name="phone" placeholder="+880 1..." ${isSubmitting ? 'disabled' : ''} class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm disabled:opacity-50">
+            </div>
+            </div>
+            
+            <button type="submit" ${isSubmitting ? 'disabled' : ''} class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-600/30 transition flex items-center justify-center disabled:opacity-75 cursor-pointer">
+            ${isSubmitting ? `
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Creating account...
+                ` : `Register & Access Portal`}
+                </button>
+                </form>
+                `}
+                
+                </div>
+                </div>
+                </div>
+                `;
+}
+
+function renderPortalLayout() {
+    const totalArea = userLands.reduce((acc, p) => acc + parseFloat(p.area || 0), 0);
+    const verifiedCount = userLands.filter(p => p.imageVerification === 'Verified' && p.policeVerification.includes('Approved')).length;
+    
+    return `
+    <div class="min-h-screen flex bg-slate-100">
+    <aside class="w-64 bg-slate-900 text-slate-300 flex-col justify-between hidden md:flex border-r border-slate-800">
+    <div>
+    <div class="p-6 border-b border-slate-800 flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/30">
+    <i class="fa-solid fa-earth-americas"></i>
+    </div>
+    <div>
+    <h1 class="font-bold text-white text-base">GeoTerra</h1>
+    <p class="text-[10px] text-emerald-400 uppercase tracking-widest font-semibold">Land Bureau</p>
+    </div>
+    </div>
+    <div class="p-4">
+    <div class="px-3 py-2 mb-4 bg-slate-800/80 rounded-xl border border-slate-700/60 flex items-center gap-3">
+    <img src="${esc(currentUserSession.avatar)}" class="w-9 h-9 rounded-full object-cover border border-emerald-500">
+    <div class="overflow-hidden">
+    <div class="font-bold text-white text-xs truncate">${esc(currentUserSession.fullName)}</div>
+    <div class="text-[10px] text-emerald-400 truncate">${esc(currentUserSession.role)}</div>
+    </div>
+    </div>
+    <nav class="space-y-1">
+    <button type="button" onclick="switchTab('dashboard')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${activeTab === 'dashboard' ? 'bg-emerald-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}">
+    <i class="fa-solid fa-chart-pie w-5"></i> Dashboard Summary
+    </button>
+    <button type="button" onclick="switchTab('lands')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${activeTab === 'lands' ? 'bg-emerald-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}">
+    <i class="fa-solid fa-map-location-dot w-5"></i> My Land Plots (${userLands.length})
+    </button>
+    <button type="button" onclick="switchTab('verifications')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${activeTab === 'verifications' ? 'bg-emerald-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400 hover:text-white'}">
+    <i class="fa-solid fa-shield-halved w-5"></i> Police & Verifications
+    </button>
+    ${navExtra(false)}
+    </nav>
+    </div>
+    </div>
+    <div class="p-4 border-t border-slate-800">
+    <button type="button" onclick="handleLogout()" class="w-full flex items-center justify-center gap-2 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl text-xs font-semibold transition">
+    <i class="fa-solid fa-right-from-bracket"></i> Sign Out (${esc(currentUserSession.username)})
+    </button>
+    </div>
+    </aside>
+    
+    <div class="flex-1 flex flex-col min-w-0">
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-xs">
+    <div class="flex items-center gap-4">
+    <button type="button" onclick="toggleMobileMenu()" class="md:hidden text-slate-700 text-lg p-2 rounded-lg hover:bg-slate-100">
+    <i class="fa-solid fa-bars"></i>
+    </button>
+    <div>
+    <h2 class="text-lg font-bold text-slate-800">
+    ${TITLES[activeTab]}
+    </h2>
+    <p class="text-xs text-slate-500">Logged in as <span class="font-semibold text-emerald-600">${esc(currentUserSession.fullName)}</span> (${esc(currentUserSession.district)})</p>
+    </div>
+    </div>
+    <div class="flex items-center gap-3">
+    <button type="button" onclick="openAddLandModal()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition">
+    <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Register Land Plot</span>
+    </button>
+    <button type="button" onclick="handleLogout()" class="md:hidden p-2 bg-red-100 text-red-600 rounded-xl text-xs" title="Sign Out">
+    <i class="fa-solid fa-right-from-bracket"></i>
+    </button>
+    </div>
+    </header>
+    
+    ${mobileMenuOpen ? `
+        <div class="md:hidden bg-slate-900 text-slate-300 p-4 border-b border-slate-800 space-y-2">
+        <button type="button" onclick="switchTab('dashboard')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold ${activeTab === 'dashboard' ? 'bg-emerald-600 text-white' : 'hover:bg-slate-800'}">
+        <i class="fa-solid fa-chart-pie w-5"></i> Dashboard Summary
+        </button>
+        <button type="button" onclick="switchTab('lands')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold ${activeTab === 'lands' ? 'bg-emerald-600 text-white' : 'hover:bg-slate-800'}">
+        <i class="fa-solid fa-map-location-dot w-5"></i> My Land Plots (${userLands.length})
+        </button>
+        <button type="button" onclick="switchTab('verifications')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold ${activeTab === 'verifications' ? 'bg-emerald-600 text-white' : 'hover:bg-slate-800'}">
+        <i class="fa-solid fa-shield-halved w-5"></i> Police & Verifications
+        </button>
+        ${navExtra(true)}
+        </div>
+        ` : ''}
+        
+        <main class="flex-1 p-6 overflow-y-auto">
+        ${renderTab(totalArea, verifiedCount)}
+            </main>
+            </div>
+            </div>
+            `;
+}
+
+function renderDashboardTab(totalArea, verifiedCount) {
+    return `
+    <div class="space-y-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+    <div class="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl font-bold"><i class="fa-solid fa-map"></i></div>
+    <div><div class="text-xs text-slate-500 font-semibold uppercase">Total Registered Plots</div><div class="text-2xl font-black text-slate-800">${userLands.length}</div></div>
+    </div>
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+    <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center text-xl font-bold"><i class="fa-solid fa-ruler-combined"></i></div>
+    <div><div class="text-xs text-slate-500 font-semibold uppercase">Total Land Area</div><div class="text-2xl font-black text-slate-800">${totalArea.toFixed(1)} <span class="text-xs font-normal text-slate-500">Decimals</span></div></div>
+    </div>
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+    <div class="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl font-bold"><i class="fa-solid fa-shield-check"></i></div>
+    <div><div class="text-xs text-slate-500 font-semibold uppercase">Fully Verified</div><div class="text-2xl font-black text-slate-800">${verifiedCount} / ${userLands.length}</div></div>
+    </div>
+    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">
+    <div class="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-xl font-bold"><i class="fa-solid fa-seedling"></i></div>
+    <div><div class="text-xs text-slate-500 font-semibold uppercase">Active Crops</div><div class="text-2xl font-black text-slate-800">${new Set(userLands.map(p => p.currentCrop)).size} Types</div></div>
+    </div>
+    </div>
+    
+    <div id="dash-weather"></div>
+    <div class="bg-gradient-to-r from-emerald-800 to-teal-900 rounded-2xl p-8 text-white shadow-lg flex flex-col md:flex-row justify-between items-center gap-6">
+    <div class="space-y-2">
+    <span class="bg-emerald-500/30 text-emerald-300 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">Authorized Landowner Portal</span>
+    <h3 class="text-2xl font-black">Welcome back, ${esc(currentUserSession.fullName)}!</h3>
+    <p class="text-emerald-100 text-sm max-w-xl">
+    Logged in as username <code class="bg-black/30 px-2 py-0.5 rounded text-emerald-300 font-mono">${esc(currentUserSession.username)}</code>. Manage your land parcels, review police clearances, and add new properties.
+    </p>
+    </div>
+    <button type="button" onclick="openAddLandModal()" class="px-6 py-3 bg-white text-emerald-900 hover:bg-emerald-50 font-bold rounded-xl text-sm shadow-md transition whitespace-nowrap">
+    <i class="fa-solid fa-plus-circle mr-2 text-emerald-600"></i> Register New Land Plot
+    </button>
+    </div>
+    
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+    <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+    <i class="fa-solid fa-list-check text-emerald-600"></i> Your Registered Land Records (${userLands.length})
+    </h3>
+    <button type="button" onclick="switchTab('lands')" class="text-xs font-bold text-emerald-600 hover:text-emerald-700">View All &rarr;</button>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-left border-collapse text-sm">
+    <thead>
+    <tr class="bg-slate-50 text-slate-500 text-xs uppercase font-semibold border-b border-slate-200">
+    <th class="px-6 py-3">Land / DAG #</th>
+    <th class="px-6 py-3">Mouza & Location</th>
+    <th class="px-6 py-3">Area</th>
+    <th class="px-6 py-3">Current Crop</th>
+    <th class="px-6 py-3">Police & Image Status</th>
+    <th class="px-6 py-3 text-right">Actions</th>
+    </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+    ${userLands.length === 0 ? `
+        <tr><td colspan="6" class="px-6 py-8 text-center text-slate-400 text-xs">No land plots registered yet. Click "Register Land Plot" above to add your first plot.</td></tr>
+        ` : userLands.map(plot => `
+        <tr class="hover:bg-slate-50/80 transition">
+        <td class="px-6 py-4 font-bold text-slate-800">${esc(plot.landNumber)}</td>
+        <td class="px-6 py-4 text-slate-600">${esc(plot.mouza)}</td>
+        <td class="px-6 py-4 text-slate-700 font-medium">${esc(plot.area)}</td>
+        <td class="px-6 py-4"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-semibold"><i class="fa-solid fa-seedling"></i> ${esc(plot.currentCrop)}</span></td>
+        <td class="px-6 py-4">
+        <div class="space-y-1">
+        <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${plot.policeVerification.includes('Approved') ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${esc(plot.policeVerification)}</span>
+        <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${plot.imageVerification === 'Verified' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'}">Image: ${esc(plot.imageVerification)}</span>
+        </div>
+        </td>
+        <td class="px-6 py-4 text-right space-x-2">
+        <button type="button" onclick="openEditLandModal('${esc(plot.id)}')" class="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs" title="Edit"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" onclick="deleteLandPlot('${esc(plot.id)}')" class="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs" title="Delete"><i class="fa-solid fa-trash"></i></button>
+        </td>
+        </tr>
+        `).join('')}
+        </tbody>
+        </table>
+        </div>
+        </div>
+        </div>
+        `;
+}
+
+function renderLandsTab() {
+    return `
+    <div class="space-y-6">
+    <div class="flex justify-between items-center">
+    <div>
+    <h3 class="text-base font-bold text-slate-800">Your Land Plots & Geospatial Records</h3>
+    <p class="text-xs text-slate-500">Every land parcel owned by ${esc(currentUserSession.fullName)} with crop tracking and verification logs.</p>
+    </div>
+    <button type="button" onclick="openAddLandModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition">
+    <i class="fa-solid fa-plus mr-1"></i> Add New Land Plot
+    </button>
+    </div>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    ${userLands.length === 0 ? `
+        <div class="col-span-full bg-white rounded-2xl p-12 text-center border border-slate-200">
+        <i class="fa-solid fa-map-location-dot text-4xl text-slate-300 mb-3"></i>
+        <h4 class="font-bold text-slate-700 text-base">No Land Plots Found</h4>
+        <p class="text-xs text-slate-400 mt-1 mb-4">You haven't registered any land parcels yet.</p>
+        <button type="button" onclick="openAddLandModal()" class="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold">Register First Plot</button>
+        </div>
+        ` : userLands.map(plot => `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col justify-between">
+        <div>
+        <div class="relative h-48 bg-slate-200">
+        <img src="${esc(plot.landImage)}" alt="Land Plot" class="w-full h-full object-cover" onerror="this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80'">
+        <div class="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white px-3 py-1 rounded-lg text-xs font-bold">${esc(plot.landNumber)}</div>
+        <div class="absolute top-3 right-3 bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-xs font-bold">${esc(plot.area)}</div>
+        </div>
+        <div class="p-5 space-y-3">
+        <div>
+        <div class="text-xs text-slate-400 uppercase font-semibold">Mouza / Location</div>
+        <div class="font-bold text-slate-800 text-sm">${esc(plot.mouza)}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+        <div>
+        <span class="text-slate-400 block font-semibold uppercase text-[10px]">Current Crop</span>
+        <span class="font-bold text-emerald-700">${esc(plot.currentCrop)}</span>
+        </div>
+        <div>
+        <span class="text-slate-400 block font-semibold uppercase text-[10px]">GPS Coords</span>
+        <span class="font-medium text-slate-700 truncate block">${esc(plot.coordinates)}</span>
+        </div>
+        </div>
+        <div>
+        <div class="text-xs text-slate-400 uppercase font-semibold">Agricultural History</div>
+        <div class="text-xs text-slate-600">${esc(plot.pastHistory || 'No past history recorded')}</div>
+        </div>
+        <div class="pt-2 flex flex-wrap gap-1.5">
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${plot.imageVerification === 'Verified' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}">Image: ${esc(plot.imageVerification)}</span>
+        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${plot.policeVerification.includes('Approved') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${esc(plot.policeVerification)}</span>
+        </div>
+        </div>
+        </div>
+        <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+        <span class="text-[11px] text-slate-500 italic truncate max-w-[180px]">${esc(plot.notes || 'No remarks')}</span>
+        <div class="space-x-1">
+        <button type="button" onclick="viewPlotIntel('${esc(plot.id)}')" class="px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-medium" title="Satellite & Weather"><i class="fa-solid fa-satellite"></i></button>
+        <button type="button" onclick="openEditLandModal('${esc(plot.id)}')" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-medium">Edit</button>
+        <button type="button" onclick="deleteLandPlot('${esc(plot.id)}')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium">Delete</button>
+        </div>
+        </div>
+        </div>
+        `).join('')}
+        </div>
+        </div>
+        `;
+}
+
+function renderVerificationsTab() {
+    return `
+    <div class="space-y-6">
+    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+    <h3 class="text-base font-bold text-slate-800 mb-1">Police Station & Bureau Verification Overview</h3>
+    <p class="text-xs text-slate-500 mb-6">Each land parcel requires police station clearance, photographic satellite/onsite verification, and agricultural officer approval.</p>
+    
+    <div class="space-y-4">
+    ${userLands.map(plot => `
+        <div class="border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50">
+        <div class="flex items-center gap-4">
+        <img src="${esc(plot.landImage)}" class="w-16 h-16 rounded-lg object-cover border border-slate-300" onerror="this.src='https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=600&q=80'">
+        <div>
+        <div class="flex items-center gap-2">
+        <h4 class="font-bold text-slate-800 text-sm">${esc(plot.landNumber)}</h4>
+        <span class="text-xs text-slate-500">(${esc(plot.mouza)})</span>
+        </div>
+        <p class="text-xs text-slate-600 mt-0.5">Crop Cultivated: <strong class="text-emerald-700">${esc(plot.currentCrop)}</strong> &bull; Size:${esc(plot.area)}</p>
+        <p class="text-[11px] text-slate-400 mt-1">Coordinates: ${esc(plot.coordinates)}</p>
+        </div>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+        <div class="text-right">
+        <span class="block text-[10px] uppercase font-semibold text-slate-400">Police Status</span>
+        <span class="inline-block px-2.5 py-1 rounded-full text-xs font-bold ${plot.policeVerification.includes('Approved') ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">${esc(plot.policeVerification)}</span>
+        </div>
+        <div class="text-right">
+        <span class="block text-[10px] uppercase font-semibold text-slate-400">Image Verification</span>
+        <span class="inline-block px-2.5 py-1 rounded-full text-xs font-bold ${plot.imageVerification === 'Verified' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'}">${esc(plot.imageVerification)}</span>
+        </div>
+        <button type="button" onclick="openEditLandModal('${esc(plot.id)}')" class="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-emerald-700">Update Status</button>
+        </div>
+        </div>
+        `).join('')}
+        </div>
+        </div>
+        </div>
+        `;
+}
+
+// Initialize on window load
+window.onload = async function() {
+    await initFirebase();
+    const savedUser = localStorage.getItem('geoterra_current_user');
+    if (savedUser) {
+        try {
+            const su = JSON.parse(savedUser); currentUserSession = allUsers.find(u => u.username === su.username) || null; touchActivity();
+            await loadUserLands();
+        } catch(e) {
+            currentUserSession = null;
+        }
+    }
+    renderApp();
+};
+
+</script>
+</body>
+</html>

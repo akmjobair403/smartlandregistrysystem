@@ -31,6 +31,14 @@ The administrator account is provisioned from `ADMIN_USERNAME`, `ADMIN_PASSWORD`
 
 If `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are configured, the server validates Cloudflare Turnstile tokens. Obtain keys from Cloudflare Turnstile and configure the matching site key in `.env`. If not configured, the application uses its own server-session visual CAPTCHA for demonstration purposes. This is basic protection and is not equivalent to a commercial bot-mitigation service; configure Turnstile before internet-facing deployment.
 
+## Data and storage
+
+- SQLite database: `data/geoterra.sqlite`
+- Session store: `data/sessions.sqlite`
+- PDF files: `private_uploads/` (outside public static assets)
+- Upload cap: `MAX_UPLOAD_MB` (default 10 MB)
+- PDFs are checked by MIME type, size, and `%PDF-` signature. Malware scanning is not bundled; integrate a scanner before handling real legal documents.
+- User land data is scoped by the authenticated user on the server. Admin endpoints check the administrator role on every request.
 
 ## Security notes before deployment
 
@@ -57,7 +65,17 @@ This is a hackathon starter, not a government service or a production legal-reco
 - District weather and satellite mapping widget in user panel (Open-Meteo + Esri/Leaflet)
 - Explicit disclaimer that portal review is not government title verification
 
-`
+## API outline
+
+- `GET /api/csrf`
+- `GET /api/auth/captcha`
+- `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/admin/auth/login`
+- `GET /api/me`, `POST /api/logout`
+- `GET /api/dashboard`
+- `POST /api/lands`, `PUT /api/lands/:id`, `DELETE /api/lands/:id`
+- `POST /api/lands/:id/documents`, `GET /api/documents/:id/file`
+- `GET /api/admin/overview`, `/api/admin/users`, `/api/admin/documents`, `/api/admin/audit`
+- `POST /api/admin/documents/:id/review`, `POST /api/admin/users/:id/status`
 
 ## Tests
 
@@ -84,5 +102,27 @@ Run `npm test`. The included tests are lightweight unit tests for core validatio
 Back up `data/geoterra.sqlite`, the session database in `data/`, and `private_uploads/` regularly to a protected location. Never commit `.env`, databases, NID data, or uploaded documents to source control. Use HTTPS, a reverse proxy/WAF, rate limits at the edge, malware scanning, encrypted backups, and a tested restore procedure before public deployment. CAPTCHA and application rate limits alone do not stop distributed denial-of-service attacks.
 
 
+## Location directory
+
+The registration and land forms load district/upazila data from `ifahimreza/bangladesh-geojson` and bilingual post-office/postcode data from `TanjidulIslamToha/bangladesh-postal-codes-database` when internet access is available. A small bundled fallback is retained for offline use. Verify current names and postcodes with official Bangladesh Police and Bangladesh Post Office sources before production. Sources: https://github.com/ifahimreza/bangladesh-geojson and https://github.com/TanjidulIslamToha/bangladesh-postal-codes-database.
+
+## Public Police and Registry Office Directories
+
+The user panel now has separate **Police stations & officer contacts** and **District & Sub-Registry Offices** sections. Police district SP contact numbers were transcribed from the Bangladesh Police citizen-charter appendix and should be rechecked against the official source before operational use. Station-level numbers are intentionally limited to the published Dhaka District Judiciary police-stations directory; other station lists open the relevant official Bangladesh Police range pages rather than displaying unverified numbers.
+
+Official sources consulted (checked 16 October 2026):
+- Bangladesh Police citizen charter and district SP mobile numbers: https://www.police.gov.bd/index.php/en/citizen_charter
+- Bangladesh Police contacts/download directory: https://www.police.gov.bd/index.php/en/contacts_of_bangladesh_police_-pdf
+- Bangladesh Police range pages: https://www.police.gov.bd/en/units_dhaka_range, https://www.police.gov.bd/en/chittagong_range, https://www.police.gov.bd/en/rajshahi_range, https://www.police.gov.bd/en/khulna_range, https://www.police.gov.bd/en/sylhet_range, https://www.police.gov.bd/en/barisal_range, https://www.police.gov.bd/en/rangpur_range, https://www.police.gov.bd/en/mymensingh_range
+- Station-level numbers shown for Dhaka District: https://dhaka.judiciary.gov.bd/en/servicve-box-detail/police-stations
+- Department of Registration (office lists, District Registrars and Sub-Registrars): https://rd.gov.bd/
+- Example district registrar officer directory: https://dr.dhaka.gov.bd/pages/officers
+
+Registry office contact details are not hardcoded across all 64 districts where a current official contact could not be verified. The district cards provide targeted searches restricted to official `gov.bd` pages and a link to the Department of Registration portal. These directories are informational; phone numbers, staff, jurisdictions, and office hours can change. Confirm with the official office before relying on the information. GeoTerra is an independent demonstration portal, not a government service.
 
 
+## GitHub publication checklist
+
+Before pushing this repository, confirm that `.env`, `data/`, `private_uploads/`, database files, logs, and real user documents are not staged or committed. The included `.gitignore` excludes these paths, but always inspect `git status` and staged files before the first push. If a real secret was committed in an earlier Git commit, changing the current file is not enough; rotate that secret and clean the Git history before making the repository public.
+
+This repository intentionally contains `.env.example` with placeholders only. Copy it to `.env` for local use and replace all placeholder values before starting the server. Never use production land documents or real national ID information in a public demo.
