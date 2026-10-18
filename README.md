@@ -102,23 +102,6 @@ Run `npm test`. The included tests are lightweight unit tests for core validatio
 Back up `data/geoterra.sqlite`, the session database in `data/`, and `private_uploads/` regularly to a protected location. Never commit `.env`, databases, NID data, or uploaded documents to source control. Use HTTPS, a reverse proxy/WAF, rate limits at the edge, malware scanning, encrypted backups, and a tested restore procedure before public deployment. CAPTCHA and application rate limits alone do not stop distributed denial-of-service attacks.
 
 
-## Location directory
-
-The registration and land forms load district/upazila data from `ifahimreza/bangladesh-geojson` and bilingual post-office/postcode data from `TanjidulIslamToha/bangladesh-postal-codes-database` when internet access is available. A small bundled fallback is retained for offline use. Verify current names and postcodes with official Bangladesh Police and Bangladesh Post Office sources before production. Sources: https://github.com/ifahimreza/bangladesh-geojson and https://github.com/TanjidulIslamToha/bangladesh-postal-codes-database.
-
-## Public Police and Registry Office Directories
-
-The user panel now has separate **Police stations & officer contacts** and **District & Sub-Registry Offices** sections. Police district SP contact numbers were transcribed from the Bangladesh Police citizen-charter appendix and should be rechecked against the official source before operational use. Station-level numbers are intentionally limited to the published Dhaka District Judiciary police-stations directory; other station lists open the relevant official Bangladesh Police range pages rather than displaying unverified numbers.
-
-Official sources consulted (checked 16 October 2026):
-- Bangladesh Police citizen charter and district SP mobile numbers: https://www.police.gov.bd/index.php/en/citizen_charter
-- Bangladesh Police contacts/download directory: https://www.police.gov.bd/index.php/en/contacts_of_bangladesh_police_-pdf
-- Bangladesh Police range pages: https://www.police.gov.bd/en/units_dhaka_range, https://www.police.gov.bd/en/chittagong_range, https://www.police.gov.bd/en/rajshahi_range, https://www.police.gov.bd/en/khulna_range, https://www.police.gov.bd/en/sylhet_range, https://www.police.gov.bd/en/barisal_range, https://www.police.gov.bd/en/rangpur_range, https://www.police.gov.bd/en/mymensingh_range
-- Station-level numbers shown for Dhaka District: https://dhaka.judiciary.gov.bd/en/servicve-box-detail/police-stations
-- Department of Registration (office lists, District Registrars and Sub-Registrars): https://rd.gov.bd/
-- Example district registrar officer directory: https://dr.dhaka.gov.bd/pages/officers
-
-Registry office contact details are not hardcoded across all 64 districts where a current official contact could not be verified. The district cards provide targeted searches restricted to official `gov.bd` pages and a link to the Department of Registration portal. These directories are informational; phone numbers, staff, jurisdictions, and office hours can change. Confirm with the official office before relying on the information. GeoTerra is an independent demonstration portal, not a government service.
 
 
 ## GitHub publication checklist
